@@ -1,0 +1,24 @@
+{
+  "name": "cf-nav-sites",
+  "version": "1.0.0",
+  "private": true,
+  "description": "网址导航：左侧分类、紧凑卡片、可上传图标，运行在 Cloudflare Workers + KV 上",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  },
+  "cloudflare": {
+    "bindings": {
+      "PASSWORD": {
+        "description": "管理密码（至少 6 位），用于登录后台。可用 `openssl rand -base64 18` 生成。"
+      },
+      "NAV_KV": {
+        "description": "保存分类、链接和上传图标的 KV 命名空间，会自动创建，保持默认即可。"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cf-nav-sites",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-08",
+  "workers_dev": true,
+  // KV 不写 id：点击「Deploy to Cloudflare」时会自动创建并回填
+  "kv_namespaces": [
+    { "binding": "NAV_KV" }
+  ],
+  // 可选：站点名称、是否要求登录才能浏览首页（修改后重新部署生效）
+  "vars": {
+    "SITE_TITLE": "网址导航",
+    "REQUIRE_LOGIN": "false"
+  }
+}
