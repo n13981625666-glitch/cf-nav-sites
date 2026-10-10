@@ -1148,6 +1148,105 @@ document.addEventListener('keydown',function(e){
   if(e.key==='Escape')document.querySelectorAll('.backdrop.open').forEach(function(b){b.classList.remove('open')});
 });
 
+/* ---------- 导入书签（Netscape 书签 HTML：浏览器 / OneNav 导出） ---------- */
+var parsedImp=null;
+function urlKey(u){try{var p=new URL(u);return p.protocol+'//'+p.host.toLowerCase()+p.pathname.replace(/\/+$/,'')+p.search}catch(e){return u}}
+function folderName(a){
+  var dl=a.closest('dl');
+  while(dl){
+    var dt=dl.parentElement,h=null;
+    if(dt&&dt.tagName==='DT'){for(var i=0;i<dt.children.length;i++)if(dt.children[i].tagName==='H3'){h=dt.children[i];break}}
+    if(!h&&dl.previousElementSibling&&dl.previousElementSibling.tagName==='H3')h=dl.previousElementSibling;
+    if(h&&!h.hasAttribute('personal_toolbar_folder')&&!h.hasAttribute('unfiled_bookmarks_folder')){
+      var n=h.textContent.trim();if(n)return n.slice(0,24);
+    }
+    dl=dl.parentElement?dl.parentElement.closest('dl'):null;
+  }
+  return '未分类';
+}
+function splitTitle(t,desc){
+  t=t.replace(/\s+/g,' ').trim();
+  if(t.length>40){
+    var m=t.match(/^(.{1,40}?)\s+[-–—|·]\s+(.*)$/);
+    if(m){t=m[1];if(!desc)desc=m[2]}
+    else t=t.slice(0,40);
+  }
+  return {title:t,desc:(desc||'').slice(0,80)};
+}
+function parseBookmarks(html){
+  var doc=new DOMParser().parseFromString(html,'text/html');
+  var as=doc.querySelectorAll('a[href]'),groups={},order=[],bad=0,total=0;
+  for(var i=0;i<as.length;i++){
+    var href=(as[i].getAttribute('href')||'').trim();
+    if(!/^https?:\/\//i.test(href)){bad++;continue}
+    var url;try{url=new URL(href).href}catch(e){bad++;continue}
+    var t=splitTitle(as[i].textContent||'',''); if(!t.title)t.title=hostOf(url);
+    var f=folderName(as[i]);
+    if(!groups[f]){groups[f]=[];order.push(f)}
+    groups[f].push({title:t.title,url:url,desc:t.desc});total++;
+  }
+  return {groups:groups,order:order,total:total,bad:bad};
+}
+function planImport(p,replace){
+  var cats=replace?[]:data.categories.slice(),links=replace?[]:data.links;
+  var seen={},nLinks=links.length;
+  links.forEach(function(l){seen[urlKey(l.url)]=1});
+  var plan=[],added=0,dup=0,capped=0,catCount=cats.length;
+  p.order.forEach(function(name){
+    var ex=cats.filter(function(c){return c.name.toLowerCase()===name.toLowerCase()})[0];
+    var items=[];
+    p.groups[name].forEach(function(it){
+      var k=urlKey(it.url);
+      if(seen[k]){dup++;return}
+      if(nLinks+items.length+added>=1000){capped++;return}
+      seen[k]=1;items.push(it);
+    });
+    if(!items.length)return;
+    if(!ex&&catCount>=60){capped+=items.length;return}
+    if(!ex)catCount++;
+    added+=items.length;
+    plan.push({name:name,isNew:!ex,items:items});
+  });
+  return {plan:plan,added:added,dup:dup,capped:capped};
+}
+function renderImp(){
+  var r=planImport(parsedImp,$('#impReplace').checked);
+  $('#impSum').innerHTML='共识别 <b>'+parsedImp.total+'</b> 个链接，将导入 <b>'+r.added+'</b> 个'+
+    (r.dup?'，跳过重复 '+r.dup+' 个':'')+(r.capped?'，超出上限 '+r.capped+' 个未导入':'')+(parsedImp.bad?'，忽略非网页链接 '+parsedImp.bad+' 个':'')+'。';
+  $('#impList').innerHTML=r.plan.length?r.plan.map(function(g){
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(g.name)+(g.isNew?' <span class="chip">新分类</span>':'')+'</span><span style="color:var(--muted);flex:none">'+g.items.length+' 个</span></div>';
+  }).join(''):'<div class="empty" style="padding:18px 0">没有可导入的新链接</div>';
+  $('#impGo').disabled=!r.added;
+  return r;
+}
+function applyImport(){
+  var replace=$('#impReplace').checked,r=planImport(parsedImp,replace);
+  if(!r.added)return;
+  if(replace){data.categories=[];data.links=[]}
+  r.plan.forEach(function(g){
+    var c=data.categories.filter(function(x){return x.name.toLowerCase()===g.name.toLowerCase()})[0];
+    if(!c){c={id:rid(3),name:g.name};data.categories.push(c)}
+    g.items.forEach(function(it){data.links.push({id:rid(5),title:it.title,url:it.url,desc:it.desc,cat:c.id,icon:''})});
+  });
+  if(!catOf(cur))cur=data.categories[0].id;
+  q='';$('#search').value='';
+  $('#impModal').classList.remove('open');
+  render();save();toast('已导入 '+r.added+' 个链接');
+}
+$('#impBtn').addEventListener('click',function(){$('#impFile').click()});
+$('#impFile').addEventListener('change',function(){
+  var f=this.files&&this.files[0];this.value='';if(!f)return;
+  if(f.size>5*1024*1024){toast('文件过大','error');return}
+  f.text().then(function(txt){
+    parsedImp=parseBookmarks(txt);
+    if(!parsedImp.total){toast('没有识别到链接，请确认是书签 HTML 文件','error');return}
+    $('#impReplace').checked=false;renderImp();$('#impModal').classList.add('open');
+  }).catch(function(){toast('读取文件失败','error')});
+});
+$('#impReplace').addEventListener('change',renderImp);
+$('#impCancel').addEventListener('click',function(){$('#impModal').classList.remove('open')});
+$('#impGo').addEventListener('click',applyImport);
+
 load();
 })();`;
 
@@ -1177,7 +1276,8 @@ ${ADMIN_CSS}
 <div class="page">
   <div class="amain">
     <aside class="apanel cats-panel">
-      <div class="ph"><span class="ttl">分类</span><button class="btn btn-sm" id="addCat" type="button">＋ 新增</button></div>
+      <div class="ph"><span class="ttl">分类</span><span style="display:flex;gap:6px"><button class="btn btn-sm" id="impBtn" type="button" title="导入浏览器 / OneNav 导出的书签 HTML">导入</button><button class="btn btn-sm" id="addCat" type="button">＋ 新增</button></span></div>
+      <input type="file" id="impFile" accept=".html,.htm,text/html" hidden>
       <div id="cats"></div>
       <div class="hint">拖动调整分类顺序；把右侧的链接拖到分类上即可移动。</div>
     </aside>
@@ -1239,6 +1339,23 @@ ${ADMIN_CSS}
     <div class="m-foot">
       <button class="btn" id="catCancel" type="button">取消</button>
       <button class="btn btn-primary" id="catSave" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 导入书签 -->
+<div class="backdrop" id="impModal">
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:460px">
+    <div class="m-head"><h2>导入书签</h2></div>
+    <div style="padding:6px 20px 4px">
+      <div id="impSum" style="font-size:14px"></div>
+      <div id="impList" style="max-height:40vh;overflow:auto;margin:10px 0;border:1px solid var(--border);border-radius:10px;padding:2px 12px"></div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);cursor:pointer"><input type="checkbox" id="impReplace">导入前清空现有的分类和链接（替换）</label>
+      <div class="hint">文件夹会变成分类，网址相同的链接自动跳过；图标会自动使用网站图标，之后可再上传替换。</div>
+    </div>
+    <div class="m-foot">
+      <button class="btn" id="impCancel" type="button">取消</button>
+      <button class="btn btn-primary" id="impGo" type="button">导入</button>
     </div>
   </div>
 </div>
