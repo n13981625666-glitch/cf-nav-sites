@@ -8,6 +8,8 @@
   "kv_namespaces": [
     { "binding": "NAV_KV" }
   ],
+  // 可选：Workers AI，用于「AI 生成描述」（免费账号有每日额度）。不需要可删除这一项。
+  "ai": { "binding": "AI" },
   // 可选：站点名称、是否要求登录才能浏览首页（修改后重新部署生效）
   "vars": {
     "SITE_TITLE": "网址导航",
