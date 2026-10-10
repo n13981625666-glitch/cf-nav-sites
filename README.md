@@ -2,7 +2,7 @@
 
 网址导航：左侧分类、紧凑卡片、可上传图标，运行在 Cloudflare Workers + KV 上，免服务器、免费额度足够个人使用。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n13981625666-glitch/cf-nav-sites)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/YOUR_USER/YOUR_REPO)
 
 ## 特性
 
@@ -37,10 +37,19 @@ npm run deploy
 | --- | --- | --- | --- |
 | `PASSWORD` | Secret | 是 | 管理密码，至少 6 位；未设置时站点只显示配置提示页 |
 | `NAV_KV` | KV 绑定 | 是 | 保存分类、链接和上传的图标 |
+| `AI` | Workers AI 绑定 | 否 | 启用「AI 生成描述」；`wrangler.jsonc` 里已配置，不需要可删除 |
+| `AI_MODEL` | 变量 | 否 | 优先使用的 Workers AI 文本模型；默认依次尝试 `@cf/zai-org/glm-4.7-flash`、`@cf/meta/llama-3.1-8b-instruct-fp8`，前一个失败自动换下一个 |
 | `SITE_TITLE` | 变量 | 否 | 站点名称，默认「网址导航」 |
 | `REQUIRE_LOGIN` | 变量 | 否 | 设为 `"true"` 则首页也需要登录，默认公开浏览、仅管理需要密码 |
 
 `SITE_TITLE` 和 `REQUIRE_LOGIN` 写在 `wrangler.jsonc` 的 `vars` 里，修改后重新部署生效。
+
+## 导入书签与 AI 描述
+
+- 管理页「导入」支持浏览器 / OneNav 导出的书签 HTML：文件夹变成分类，网址相同的自动跳过，`名称 - 描述` 会自动拆开。
+- 绑定了 Workers AI 后，编辑弹窗里会出现「AI 生成描述」，列表上方有「AI 补全描述」可批量处理没有描述的链接。Worker 会抓取网页标题和简介，再让模型总结成一句话；抓取失败时仅凭域名推测，界面会提示核对。
+- 该功能只对已登录的管理员开放，并拒绝内网和本机地址。使用的是 Cloudflare Workers AI 的免费额度，额度和可用模型以 Cloudflare 官方文档为准。
+- 本地 `wrangler dev` 时 AI 绑定会走线上服务，需要已登录 Cloudflare 账号。
 
 ## 关于图标
 
