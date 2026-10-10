@@ -2,7 +2,7 @@
 
 网址导航：左侧分类、紧凑卡片、可上传图标，运行在 Cloudflare Workers + KV 上，免服务器、免费额度足够个人使用。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n13981625666-glitch/cd-nav)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/YOUR_USER/YOUR_REPO)
 
 ## 特性
 
