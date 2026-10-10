@@ -454,7 +454,9 @@ button{cursor:pointer}
 .search{position:relative;flex:1;min-width:0}
 .search>svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--faint);pointer-events:none}
 .search .input{padding-left:38px}
-.topbar{position:sticky;top:0;z-index:20;height:var(--tb);display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.topbar{position:sticky;top:0;z-index:20;height:var(--tb);background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.tb-in{height:100%;display:flex;align-items:center;gap:10px;max-width:var(--mw,1240px);margin:0 auto;padding:0 20px}
+@media(max-width:860px){.tb-in{padding:0 14px}}
 .footer{margin-top:20px;padding:18px 0 28px;border-top:1px solid var(--border);color:var(--faint);font-size:12px}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 `;
@@ -597,7 +599,7 @@ const HOME_CSS = `
   .tb-sp{display:none}
   .kbd{display:none}.search .input{padding-right:12px}
   .layout{display:block;padding-top:0}
-  .side{position:sticky;top:var(--tb);z-index:15;flex-direction:row;gap:8px;overflow-x:auto;overflow-y:hidden;max-height:none;padding:8px 0;margin-bottom:6px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);scrollbar-width:none}
+  .side{position:sticky;top:var(--tb);z-index:15;flex-direction:row;gap:8px;overflow-x:auto;overflow-y:hidden;max-height:none;padding:8px 14px;margin:0 -14px 6px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);scrollbar-width:none}
   .side::-webkit-scrollbar{display:none}
   .side-item{flex:none;white-space:nowrap;border:1px solid var(--border);background:var(--surface);padding:6px 12px}
   .side-item .n{display:none}
@@ -730,8 +732,7 @@ ${HOME_CSS}
 </style>
 </head>
 <body>
-<div class="page">
-  <header class="topbar">
+<header class="topbar"><div class="tb-in">
     <div class="brand"><div class="mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 7v10l8 5 8-5V7z"/><path d="M12 22V12M4 7l8 5 8-5"/></svg></div><span class="bt">${escapeHtml(title)}</span></div>
     <label class="search">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -742,8 +743,9 @@ ${HOME_CSS}
     ${THEME_BTN}
     <a class="icon-btn" href="/admin" title="管理" aria-label="管理"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></a>
     ${authed ? '<a class="icon-btn" href="/logout" title="退出登录" aria-label="退出登录"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg></a>' : ''}
-  </header>
+  </div></header>
 
+<div class="page">
   <div class="layout">
     <nav class="side" id="side" aria-label="分类"></nav>
     <main class="main" id="main"></main>
@@ -762,6 +764,7 @@ ${HOME_CSS}
 //  管理后台：左侧分类，右侧该分类的链接
 // ============================================================
 const ADMIN_CSS = `
+:root{--mw:1100px}
 .page{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 20px 60px}
 .topbar h1{font-size:18px;font-weight:650;letter-spacing:-.01em;flex:1}
 .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:14px;flex:none}
@@ -769,13 +772,17 @@ const ADMIN_CSS = `
 .save{font-size:12px;color:var(--faint);min-width:56px;text-align:right}
 .save.saving{color:var(--warn)}.save.saved{color:var(--ok)}.save.error{color:var(--bad)}
 .amain{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;align-items:start;margin-top:8px}
-.apanel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px}
+.apanel{min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px}
 .cats-panel{position:sticky;top:calc(var(--tb) + 8px);max-height:calc(100vh - var(--tb) - 24px);overflow-y:auto}
 .ph{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
 .ph .ttl{font-size:13px;font-weight:600;color:var(--muted)}
 .ph h2{font-size:17px;font-weight:650;display:inline-block;margin-right:8px;vertical-align:middle}
 .pane-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-.pane-head .ttlbox{flex:1;min-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane-head .ttlbox{flex:1;min-width:140px;display:flex;align-items:center;gap:8px}
+.pane-head h2{font-size:17px;font-weight:650;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane-head .chip{flex:none}
+.rt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-name .chip{flex:none}
 .pane-head .input{width:210px;height:36px}
 .hint{color:var(--faint);font-size:12px;margin-top:10px}
 .crow{display:flex;align-items:center;gap:6px;padding:8px 6px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:background .12s}
@@ -829,10 +836,10 @@ const ADMIN_CSS = `
 .toast.error{background:var(--bad);color:#fff}
 @media(max-width:820px){
   .page{padding:0 14px 60px}
-  .amain{grid-template-columns:1fr}
+  .amain{grid-template-columns:minmax(0,1fr)}
   .cats-panel{position:static;max-height:none}
   .pane-head .input{width:100%;order:3}
-  .m-body{grid-template-columns:1fr}
+  .m-body{grid-template-columns:minmax(0,1fr)}
 }
 `;
 
@@ -912,7 +919,7 @@ function renderLinks(){
     return '<div class="row" data-id="'+esc(l.id)+'" draggable="'+(searching?'false':'true')+'">'+
       '<span class="grip'+(searching?' off':'')+'" title="'+(searching?'搜索时无法排序':'拖动排序，或拖到左侧分类')+'">⋮⋮</span>'+
       U.icon(l)+
-      '<div class="r-main"><div class="r-name">'+esc(l.title)+(searching&&cc?'<span class="chip">'+esc(cc.name)+'</span>':'')+'</div>'+
+      '<div class="r-main"><div class="r-name"><span class="rt">'+esc(l.title)+'</span>'+(searching&&cc?'<span class="chip">'+esc(cc.name)+'</span>':'')+'</div>'+
       '<div class="r-sub">'+esc(l.desc?l.desc+' · ':'')+esc(hostOf(l.url))+'</div></div>'+
       '<div class="r-act"><button class="icon-btn" data-act="edit" title="编辑" aria-label="编辑">'+SVG_EDIT+'</button>'+
       '<button class="icon-btn danger" data-act="del" title="删除" aria-label="删除">'+SVG_TRASH+'</button></div></div>';
@@ -1159,15 +1166,15 @@ ${ADMIN_CSS}
 </style>
 </head>
 <body>
-<div class="page">
-  <header class="topbar">
+<header class="topbar"><div class="tb-in">
     <a class="back" href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>返回</a>
     <h1>管理</h1>
     <span class="save" id="saveState"></span>
     ${THEME_BTN}
     <a class="icon-btn" href="/logout" title="退出登录" aria-label="退出登录"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg></a>
-  </header>
+  </div></header>
 
+<div class="page">
   <div class="amain">
     <aside class="apanel cats-panel">
       <div class="ph"><span class="ttl">分类</span><button class="btn btn-sm" id="addCat" type="button">＋ 新增</button></div>
