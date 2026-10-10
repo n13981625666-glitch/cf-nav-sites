@@ -231,7 +231,8 @@ async function fetchFavicon(host) {
 // ============================================================
 //  AI 生成一句话描述（Cloudflare Workers AI，可选）
 // ============================================================
-const AI_MODEL_DEFAULT = '@cf/meta/llama-3.1-8b-instruct';
+// 依次尝试，前一个失败（下线 / 额度 / 空结果）就换下一个。可用 AI_MODEL 变量把自定义模型放到最前面。
+const AI_MODELS_DEFAULT = ['@cf/zai-org/glm-4.7-flash', '@cf/meta/llama-3.1-8b-instruct-fp8'];
 
 function isBlockedHost(h) {
     h = String(h || '').toLowerCase();
@@ -345,18 +346,27 @@ async function describeSite(env, rawUrl, hintTitle) {
         },
         { role: 'user', content: lines.join('\n') }
     ];
-    const model = String(env.AI_MODEL || AI_MODEL_DEFAULT);
-    let out;
-    try {
-        out = await env.AI.run(model, { messages, max_tokens: 80, temperature: 0.3 });
-    } catch (e) {
-        throw new Error('AI 调用失败：' + String(e?.message || e).slice(0, 120));
+    const models = [...(env.AI_MODEL ? [String(env.AI_MODEL).trim()] : []), ...AI_MODELS_DEFAULT]
+        .filter((m, i, a) => m && a.indexOf(m) === i);
+    let t = '', lastErr = '';
+    for (const model of models) {
+        try {
+            const opts = /glm|kimi|qwen3|gpt-oss|deepseek/i.test(model)
+                ? { messages, max_completion_tokens: 600, temperature: 0.3 }   // 推理类模型要给思考留足空间
+                : { messages, max_tokens: 80, temperature: 0.3 };
+            const out = await env.AI.run(model, opts);
+            let raw = out?.response ?? out?.result?.response ?? out?.choices?.[0]?.message?.content ?? '';
+            raw = String(raw).replace(/<think>[\s\S]*?<\/think>/gi, '').trim().split('\n').find(x => x.trim()) || '';
+            raw = raw.trim().replace(/^(一句话)?(描述|简介)[:：]\s*/, '')
+                .replace(/^["“”「『'\s]+|["“”」』'\s]+$/g, '')
+                .replace(/[。．.！!\s]+$/, '').slice(0, 40);
+            if (raw) { t = raw; break; }
+            lastErr = model + ' 返回为空';
+        } catch (e) {
+            lastErr = String(e?.message || e).slice(0, 160);
+        }
     }
-    let t = out?.response ?? out?.result?.response ?? out?.choices?.[0]?.message?.content ?? '';
-    t = String(t).trim().split('\n').find(x => x.trim()) || '';
-    t = t.trim().replace(/^(一句话)?(描述|简介)[:：]\s*/, '')
-        .replace(/^["“”「『'\s]+|["“”」』'\s]+$/g, '')
-        .replace(/[。．.！!\s]+$/, '').slice(0, 40);
+    if (!t && lastErr && !/返回为空/.test(lastErr)) throw new Error('AI 调用失败：' + lastErr);
     if (!t) throw new Error('AI 没有返回内容，请重试');
 
     let name = '';
