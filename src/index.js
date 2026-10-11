@@ -14,6 +14,7 @@
 // ============================================================
 
 const DATA_KEY = 'nav:data';
+const CLICKS_KEY = 'nav:clicks';
 const ICON_PREFIX = 'icon:';
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_LINKS = 1000;
@@ -187,6 +188,21 @@ async function getData(env) {
         if (raw && typeof raw === 'object') return normalizeData(raw, false);
     } catch (e) { /* ignore */ }
     return normalizeData(DEFAULT_DATA, false);
+}
+
+// 点击次数：{ 链接id: 次数 }，只保留仍存在的链接
+async function getClicks(env, data) {
+    try {
+        const raw = await env.NAV_KV.get(CLICKS_KEY, 'json');
+        const ids = new Set(data.links.map(l => l.id));
+        const out = {};
+        if (raw && typeof raw === 'object') {
+            for (const [k, v] of Object.entries(raw)) {
+                if (ids.has(k) && Number.isFinite(v) && v > 0) out[k] = Math.floor(v);
+            }
+        }
+        return out;
+    } catch (e) { return {}; }
 }
 
 // 删除不再被引用的图标（只清理 1 小时前上传的，避免误删刚上传、尚未保存的图标）
@@ -444,6 +460,20 @@ export default {
             return res;
         }
 
+        // ---------------- 记录点击（用于「常用网站」） ----------------
+        if (path === '/click' && request.method === 'POST') {
+            if (REQUIRE_LOGIN && !authed) return new Response(null, { status: 401 });
+            try {
+                const id = (await request.text()).trim().slice(0, 64);
+                const data = await getData(env);
+                if (!data.links.some(l => l.id === id)) return new Response(null, { status: 404 });
+                const clicks = await getClicks(env, data);
+                clicks[id] = (clicks[id] || 0) + 1;
+                await env.NAV_KV.put(CLICKS_KEY, JSON.stringify(clicks));
+            } catch (e) { /* 统计失败不影响使用 */ }
+            return new Response(null, { status: 204 });
+        }
+
         // ---------------- API（需要登录） ----------------
         if (path.startsWith('/api/')) {
             if (!authed) return json({ error: 'Unauthorized' }, 401);
@@ -535,7 +565,9 @@ export default {
         // ---------------- 首页 ----------------
         if (path === '/') {
             if (REQUIRE_LOGIN && !authed) return html(loginPage(false, TITLE, '/'));
-            return html(homePage(await getData(env), TITLE, authed));
+            const data = await getData(env);
+            const clicks = await getClicks(env, data);
+            return html(homePage(data, TITLE, authed, clicks));
         }
 
         return new Response('Not Found', { status: 404 });
@@ -776,13 +808,20 @@ var D=window.__DATA__,cats=D.categories,links=D.links;
 var $=function(s){return document.querySelector(s)};
 var side=$('#side'),main=$('#main'),input=$('#q');
 var q='',active=null,lock=0;
+var TOP_N=8,clicks=window.__CLICKS__||{},byId={};
+links.forEach(function(l){byId[l.id]=l});
+function topLinks(){
+  return links.filter(function(l){return clicks[l.id]>0})
+    .sort(function(a,b){return clicks[b.id]-clicks[a.id]})
+    .slice(0,TOP_N);
+}
 
 function visible(l,c){
   if(!q)return true;
   return norm(l.title+' '+l.desc+' '+hostOf(l.url)+' '+c.name).indexOf(norm(q))!==-1;
 }
 function card(l,mark){
-  return '<a class="card'+(mark?' first':'')+'" href="'+esc(l.url)+'" target="_blank" rel="noopener noreferrer"'+(l.desc?' title="'+esc(l.desc)+'"':'')+'>'+
+  return '<a class="card'+(mark?' first':'')+'" data-id="'+esc(l.id)+'" href="'+esc(l.url)+'" target="_blank" rel="noopener noreferrer"'+(l.desc?' title="'+esc(l.desc)+'"':'')+'>'+
     U.icon(l)+'<span class="txt"><span class="t">'+esc(l.title)+'</span>'+(l.desc?'<span class="d">'+esc(l.desc)+'</span>':'')+'</span></a>';
 }
 function render(){
@@ -792,6 +831,13 @@ function render(){
     return;
   }
   var sideH='',mainH='',total=0,marked=false;
+  var top=q?[]:topLinks();
+  if(top.length){
+    total+=top.length;
+    sideH+='<a class="side-item" href="#cat-__top" data-cat="__top"><span class="nm">⭐ 常用网站</span><span class="n">'+top.length+'</span></a>';
+    mainH+='<section class="sec" id="cat-__top" data-cat="__top"><h2>⭐ 常用网站<span class="cnt">按点击次数</span></h2><div class="grid">'+
+      top.map(function(l){return card(l,false)}).join('')+'</div></section>';
+  }
   cats.forEach(function(c){
     var items=links.filter(function(l){return l.cat===c.id&&visible(l,c)});
     if(!items.length)return;
@@ -862,6 +908,16 @@ side.addEventListener('click',function(e){
   setActive(id);
   sec.scrollIntoView({behavior:'smooth',block:'start'});
 });
+/* 统计点击（左键、中键、Ctrl/⌘+点击都算；右键不算） */
+function track(e){
+  if(e.button===2)return;
+  var a=e.target.closest('a.card');if(!a)return;
+  var id=a.getAttribute('data-id');if(!id||!byId[id])return;
+  clicks[id]=(clicks[id]||0)+1;
+  try{fetch('/click',{method:'POST',body:id,keepalive:true,credentials:'same-origin'}).catch(function(){})}catch(err){}
+}
+main.addEventListener('click',track);
+main.addEventListener('auxclick',function(e){if(e.button===1)track(e)});
 input.addEventListener('input',function(){q=input.value.trim();render()});
 document.addEventListener('keydown',function(e){
   var tag=(document.activeElement&&document.activeElement.tagName)||'';
@@ -869,13 +925,17 @@ document.addEventListener('keydown',function(e){
   else if(e.key==='Escape'&&document.activeElement===input){input.value='';q='';render();input.blur()}
   else if(e.key==='Enter'&&document.activeElement===input&&q){
     var first=main.querySelector('.card');
-    if(first)window.open(first.getAttribute('href'),'_blank','noopener');
+    if(first){
+      var fid=first.getAttribute('data-id');
+      if(fid){clicks[fid]=(clicks[fid]||0)+1;try{fetch('/click',{method:'POST',body:fid,keepalive:true,credentials:'same-origin'}).catch(function(){})}catch(err){}}
+      window.open(first.getAttribute('href'),'_blank','noopener');
+    }
   }
 });
 render();
 })();`;
 
-function homePage(data, title, authed) {
+function homePage(data, title, authed, clicks) {
     const year = new Date().getFullYear();
     return `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="dark">
@@ -911,7 +971,7 @@ ${HOME_CSS}
   </div>
   <footer class="footer">© ${year} ${escapeHtml(title)}</footer>
 </div>
-<script>window.__DATA__=${safeJson(data)};</script>
+<script>window.__DATA__=${safeJson(data)};window.__CLICKS__=${safeJson(clicks || {})};</script>
 <script>${COMMON_JS}</script>
 <script>${HOME_JS}</script>
 <script>${THEME_JS}</script>
