@@ -15,6 +15,7 @@
 
 const DATA_KEY = 'nav:data';
 const CLICKS_KEY = 'nav:clicks';
+const HALF_LIFE_DAYS = 30; // 点击权重每 30 天减半，常用榜跟随近期使用习惯
 const ICON_PREFIX = 'icon:';
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_LINKS = 1000;
@@ -190,19 +191,39 @@ async function getData(env) {
     return normalizeData(DEFAULT_DATA, false);
 }
 
-// 点击次数：{ 链接id: 次数 }，只保留仍存在的链接
-async function getClicks(env, data) {
+// 点击记录：{ 链接id: { s: 分数, t: 上次更新时间戳 } }，分数随时间指数衰减（半衰期 HALF_LIFE_DAYS）
+function decayFactor(from, now) {
+    return Math.pow(0.5, Math.max(0, now - from) / (HALF_LIFE_DAYS * 86400000));
+}
+
+// 读取原始记录，只保留仍存在的链接；兼容旧格式（纯数字）
+async function getClickRecords(env, data) {
     try {
         const raw = await env.NAV_KV.get(CLICKS_KEY, 'json');
         const ids = new Set(data.links.map(l => l.id));
+        const now = Date.now();
         const out = {};
         if (raw && typeof raw === 'object') {
             for (const [k, v] of Object.entries(raw)) {
-                if (ids.has(k) && Number.isFinite(v) && v > 0) out[k] = Math.floor(v);
+                if (!ids.has(k)) continue;
+                const sc = typeof v === 'number' ? v : v?.s;
+                const t = typeof v === 'number' ? now : v?.t;
+                if (Number.isFinite(sc) && sc > 0 && Number.isFinite(t)) out[k] = { s: sc, t };
             }
         }
         return out;
     } catch (e) { return {}; }
+}
+
+// 当前时刻的衰减后分数：{ 链接id: 分数 }（过低的忽略）
+function currentScores(records) {
+    const now = Date.now();
+    const out = {};
+    for (const [k, r] of Object.entries(records)) {
+        const v = r.s * decayFactor(r.t, now);
+        if (v >= 0.05) out[k] = Math.round(v * 1000) / 1000;
+    }
+    return out;
 }
 
 // 删除不再被引用的图标（只清理 1 小时前上传的，避免误删刚上传、尚未保存的图标）
@@ -467,9 +488,15 @@ export default {
                 const id = (await request.text()).trim().slice(0, 64);
                 const data = await getData(env);
                 if (!data.links.some(l => l.id === id)) return new Response(null, { status: 404 });
-                const clicks = await getClicks(env, data);
-                clicks[id] = (clicks[id] || 0) + 1;
-                await env.NAV_KV.put(CLICKS_KEY, JSON.stringify(clicks));
+                const rec = await getClickRecords(env, data);
+                const now = Date.now();
+                const old = rec[id];
+                rec[id] = { s: (old ? old.s * decayFactor(old.t, now) : 0) + 1, t: now };
+                // 顺手清掉已衰减到可忽略的旧记录
+                for (const [k, r] of Object.entries(rec)) {
+                    if (r.s * decayFactor(r.t, now) < 0.05) delete rec[k];
+                }
+                await env.NAV_KV.put(CLICKS_KEY, JSON.stringify(rec));
             } catch (e) { /* 统计失败不影响使用 */ }
             return new Response(null, { status: 204 });
         }
@@ -566,7 +593,7 @@ export default {
         if (path === '/') {
             if (REQUIRE_LOGIN && !authed) return html(loginPage(false, TITLE, '/'));
             const data = await getData(env);
-            const clicks = await getClicks(env, data);
+            const clicks = currentScores(await getClickRecords(env, data));
             return html(homePage(data, TITLE, authed, clicks));
         }
 
@@ -835,7 +862,7 @@ function render(){
   if(top.length){
     total+=top.length;
     sideH+='<a class="side-item" href="#cat-__top" data-cat="__top"><span class="nm">⭐ 常用网站</span><span class="n">'+top.length+'</span></a>';
-    mainH+='<section class="sec" id="cat-__top" data-cat="__top"><h2>⭐ 常用网站<span class="cnt">按点击次数</span></h2><div class="grid">'+
+    mainH+='<section class="sec" id="cat-__top" data-cat="__top"><h2>⭐ 常用网站<span class="cnt">近期常用</span></h2><div class="grid">'+
       top.map(function(l){return card(l,false)}).join('')+'</div></section>';
   }
   cats.forEach(function(c){
