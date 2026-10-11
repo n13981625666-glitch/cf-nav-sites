@@ -747,7 +747,7 @@ const HOME_CSS = `
 .card{display:flex;align-items:center;gap:12px;padding:10px 12px;min-height:56px;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;transition:transform .15s,border-color .15s,box-shadow .15s}
 .card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow)}
 .card.first{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.txt{min-width:0;display:flex;flex-direction:column}
+.txt{min-width:0;display:flex;flex-direction:column;gap:2px}
 .t{font-weight:600;font-size:14px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .d{font-size:12px;line-height:1.35;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{text-align:center;color:var(--faint);padding:80px 0}
