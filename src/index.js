@@ -481,23 +481,34 @@ export default {
             return res;
         }
 
-        // ---------------- 记录点击（用于「常用网站」） ----------------
+        // ---------------- 汇报点击（用于「常用网站」） ----------------
+        // 浏览器每小时汇总上报一次：body 为 JSON { 链接id: 次数 }，一次上报只写一次 KV
         if (path === '/click' && request.method === 'POST') {
             if (REQUIRE_LOGIN && !authed) return new Response(null, { status: 401 });
             try {
-                const id = (await request.text()).trim().slice(0, 64);
+                const raw = await request.text();
+                if (raw.length > 16384) return new Response(null, { status: 413 });
+                const batch = JSON.parse(raw);
+                if (!batch || typeof batch !== 'object' || Array.isArray(batch)) return new Response(null, { status: 400 });
                 const data = await getData(env);
-                if (!data.links.some(l => l.id === id)) return new Response(null, { status: 404 });
                 const rec = await getClickRecords(env, data);
                 const now = Date.now();
-                const old = rec[id];
-                rec[id] = { s: (old ? old.s * decayFactor(old.t, now) : 0) + 1, t: now };
-                // 顺手清掉已衰减到可忽略的旧记录
-                for (const [k, r] of Object.entries(rec)) {
-                    if (r.s * decayFactor(r.t, now) < 0.05) delete rec[k];
+                let changed = false;
+                for (const [id, n] of Object.entries(batch)) {
+                    const cnt = Math.min(Math.floor(Number(n)), 500); // 单个链接单次上报最多计 500，防止被刷
+                    if (!(cnt > 0) || !data.links.some(l => l.id === id)) continue;
+                    const old = rec[id];
+                    rec[id] = { s: (old ? old.s * decayFactor(old.t, now) : 0) + cnt, t: now };
+                    changed = true;
                 }
-                await env.NAV_KV.put(CLICKS_KEY, JSON.stringify(rec));
-            } catch (e) { /* 统计失败不影响使用 */ }
+                if (changed) {
+                    // 顺手清掉已衰减到可忽略的旧记录
+                    for (const [k, r] of Object.entries(rec)) {
+                        if (r.s * decayFactor(r.t, now) < 0.05) delete rec[k];
+                    }
+                    await env.NAV_KV.put(CLICKS_KEY, JSON.stringify(rec));
+                }
+            } catch (e) { return new Response(null, { status: 400 }); }
             return new Response(null, { status: 204 });
         }
 
@@ -935,16 +946,56 @@ side.addEventListener('click',function(e){
   setActive(id);
   sec.scrollIntoView({behavior:'smooth',block:'start'});
 });
-/* 统计点击（左键、中键、Ctrl/⌘+点击都算；右键不算） */
+/* 点击统计：先记在本机，每小时汇总上报一次（节省 KV 写入） */
+var PEND_KEY='nav:pending',LAST_KEY='nav:lastReport',REPORT_MS=3600000;
+var memPend={},memLast=0;
+function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function lsSet(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}}
+function readPend(){
+  var raw=lsGet(PEND_KEY);
+  if(raw===null)return memPend;
+  try{var o=JSON.parse(raw);return o&&typeof o==='object'?o:{}}catch(e){return {}}
+}
+function writePend(o){if(!lsSet(PEND_KEY,JSON.stringify(o)))memPend=o}
+function lastReport(){var v=parseInt(lsGet(LAST_KEY),10);return isNaN(v)?memLast:v}
+function setLast(t){memLast=t;lsSet(LAST_KEY,String(t))}
+function addPend(o,id,n){o[id]=(o[id]||0)+n}
+function flush(force){
+  var now=Date.now(),prev=lastReport();
+  if(!force&&now-prev<REPORT_MS)return;
+  var take=readPend();
+  if(!Object.keys(take).length)return;
+  writePend({});setLast(now); /* 先清空并记下时间，避免多个标签页重复上报 */
+  var ok=false;
+  try{
+    fetch('/click',{method:'POST',body:JSON.stringify(take),keepalive:true,credentials:'same-origin',headers:{'Content-Type':'application/json'}})
+      .then(function(r){if(!r.ok)throw 0})
+      .catch(function(){ /* 失败：放回去，下次再报 */
+        var cur=readPend();Object.keys(take).forEach(function(k){addPend(cur,k,take[k])});
+        writePend(cur);setLast(prev);
+      });
+    ok=true;
+  }catch(e){}
+  if(!ok){var cur=readPend();Object.keys(take).forEach(function(k){addPend(cur,k,take[k])});writePend(cur);setLast(prev)}
+}
+function bump(id){
+  if(!id||!byId[id])return;
+  clicks[id]=(clicks[id]||0)+1; /* 本机榜单立即生效 */
+  var p=readPend();addPend(p,id,1);writePend(p);
+  flush(false);
+}
+/* 把本机尚未上报的点击叠加到服务器给的分数上，保证本机榜单不滞后 */
+(function(){var p=readPend();Object.keys(p).forEach(function(k){if(byId[k])clicks[k]=(clicks[k]||0)+p[k]})})();
 function track(e){
   if(e.button===2)return;
   var a=e.target.closest('a.card');if(!a)return;
-  var id=a.getAttribute('data-id');if(!id||!byId[id])return;
-  clicks[id]=(clicks[id]||0)+1;
-  try{fetch('/click',{method:'POST',body:id,keepalive:true,credentials:'same-origin'}).catch(function(){})}catch(err){}
+  bump(a.getAttribute('data-id'));
 }
 main.addEventListener('click',track);
 main.addEventListener('auxclick',function(e){if(e.button===1)track(e)});
+flush(false); /* 打开页面时若已满一小时，顺便上报上次没报的 */
+setInterval(function(){flush(false)},300000); /* 页面一直开着时，每 5 分钟检查是否满一小时 */
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flush(false)});
 input.addEventListener('input',function(){q=input.value.trim();render()});
 document.addEventListener('keydown',function(e){
   var tag=(document.activeElement&&document.activeElement.tagName)||'';
@@ -953,8 +1004,7 @@ document.addEventListener('keydown',function(e){
   else if(e.key==='Enter'&&document.activeElement===input&&q){
     var first=main.querySelector('.card');
     if(first){
-      var fid=first.getAttribute('data-id');
-      if(fid){clicks[fid]=(clicks[fid]||0)+1;try{fetch('/click',{method:'POST',body:fid,keepalive:true,credentials:'same-origin'}).catch(function(){})}catch(err){}}
+      bump(first.getAttribute('data-id'));
       window.open(first.getAttribute('href'),'_blank','noopener');
     }
   }
