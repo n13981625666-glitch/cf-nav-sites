@@ -822,6 +822,47 @@ const HOME_CSS = `
 .d{font-size:12px;line-height:1.4;margin-top:4px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{text-align:center;color:var(--faint);padding:80px 0}
 .empty a{color:var(--accent)}
+/* 聚焦模式：整屏只有方形卡片，按点击次数从中心向外铺开，多屏用右侧圆点切换 */
+.stage{display:none}
+#focusBtn.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+html.focus,html.focus body{overflow:hidden}
+html.focus .page,html.focus .search{display:none}
+html.focus .stage{display:block;position:fixed;left:0;right:0;top:var(--tb);bottom:0;z-index:5;overflow:hidden}
+.track{position:absolute;left:0;right:0;top:0;height:100%;transition:transform .4s cubic-bezier(.3,.7,.2,1)}
+.fpage{position:absolute;left:0;right:0;height:100%}
+.fcard{
+  --lx:50%;--ly:30%;--li:0;--sx:30%;
+  --spec:rgba(255,255,255,.95);--sweep:rgba(255,255,255,.65);
+  position:absolute;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px 6px 10px;border-radius:12px;text-align:center;
+  /* 钢琴键白：微暖的象牙白，上半部一层带硬边的亮面，底部一道键面的暗边 */
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.95) 0%,rgba(255,255,255,.4) 42%,rgba(255,255,255,0) 43%),
+    linear-gradient(180deg,#fefdf9 0%,#f7f4ec 68%,#ede8db 100%);
+  box-shadow:inset 0 1px 0 #fff,inset 0 -3px 0 rgba(120,105,70,.13),inset 0 0 0 1px rgba(60,50,30,.11),0 1px 2px rgba(60,50,30,.12),0 12px 22px -14px rgba(60,50,30,.45);
+}
+/* 钢琴烤漆黑：近乎纯黑的深色底，上半部一块带硬边的镜面反光，边缘一圈细高光 */
+[data-theme=dark] .fcard{
+  --spec:rgba(255,255,255,.32);--sweep:rgba(255,255,255,.11);
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.17) 0%,rgba(255,255,255,.055) 48%,rgba(255,255,255,0) 48.6%),
+    radial-gradient(120% 90% at 18% 0%,rgba(255,255,255,.07),transparent 60%),
+    linear-gradient(165deg,#16171b 0%,#050506 50%,#000 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),inset 0 -1px 0 rgba(255,255,255,.07),inset 0 0 0 1px rgba(255,255,255,.07),0 1px 2px rgba(0,0,0,.6),0 14px 26px -14px rgba(0,0,0,.95);
+}
+/* 扫光：随鼠标水平位置在卡片上滑过，像漆面 / 琴键上的反光 */
+.fcard::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(112deg,transparent 36%,var(--sweep) 47%,transparent 58%);background-size:300% 100%;background-position:var(--sx) 0;opacity:.8;transition:background-position .25s ease-out}
+/* 点光源高光：跟随鼠标，靠近时才亮 */
+.fcard::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(circle at var(--lx) var(--ly),var(--spec),transparent 62%);opacity:var(--li)}
+.fcard>*{position:relative;z-index:1}
+.fcard .ico{width:var(--ico);height:var(--ico);border-radius:calc(var(--ico)*.22)}
+.fcard .ico-fb{font-size:calc(var(--ico)*.45)}
+.fn{flex:none;max-width:100%;font-size:13px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.dots{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;z-index:6}
+.dot{width:24px;height:16px;display:flex;align-items:center;justify-content:center;background:none;border:0;padding:0;cursor:pointer}
+.dot::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--text);transition:background .2s}
+.dot.on::before{background:#9b9b9b}
 @media(max-width:860px){
   .page{padding:0 14px}
   .brand .bt{display:none}
@@ -844,7 +885,7 @@ const HOME_JS = String.raw`
 var U=window.NavUI,esc=U.esc,hostOf=U.hostOf,norm=U.norm;
 var D=window.__DATA__,cats=D.categories,links=D.links;
 var $=function(s){return document.querySelector(s)};
-var side=$('#side'),main=$('#main'),input=$('#q');
+var side=$('#side'),main=$('#main'),input=$('#q'),stage=$('#stage'),fbtn=$('#focusBtn');
 var q='',active=null,lock=0;
 var TOP_N=8,clicks=window.__CLICKS__||{},byId={};
 links.forEach(function(l){byId[l.id]=l});
@@ -988,10 +1029,12 @@ function bump(id){
 (function(){var p=readPend();Object.keys(p).forEach(function(k){if(byId[k])clicks[k]=(clicks[k]||0)+p[k]})})();
 function track(e){
   if(e.button===2)return;
-  var a=e.target.closest('a.card');if(!a)return;
+  var a=e.target.closest('a[data-id]');if(!a)return;
   bump(a.getAttribute('data-id'));
 }
 main.addEventListener('click',track);
+stage.addEventListener('click',track);
+stage.addEventListener('auxclick',function(e){if(e.button===1)track(e)});
 main.addEventListener('auxclick',function(e){if(e.button===1)track(e)});
 flush(false); /* 打开页面时若已满一小时，顺便上报上次没报的 */
 setInterval(function(){flush(false)},300000); /* 页面一直开着时，每 5 分钟检查是否满一小时 */
@@ -999,7 +1042,7 @@ document.addEventListener('visibilitychange',function(){if(document.visibilitySt
 input.addEventListener('input',function(){q=input.value.trim();render()});
 document.addEventListener('keydown',function(e){
   var tag=(document.activeElement&&document.activeElement.tagName)||'';
-  if(e.key==='/'&&tag!=='INPUT'&&tag!=='TEXTAREA'){e.preventDefault();input.focus();input.select()}
+  if(e.key==='/'&&tag!=='INPUT'&&tag!=='TEXTAREA'){e.preventDefault();if(focusOn())setFocus(false);input.focus();input.select()}
   else if(e.key==='Escape'&&document.activeElement===input){input.value='';q='';render();input.blur()}
   else if(e.key==='Enter'&&document.activeElement===input&&q){
     var first=main.querySelector('.card');
@@ -1009,7 +1052,129 @@ document.addEventListener('keydown',function(e){
     }
   }
 });
+/* ---------- 聚焦模式 ---------- */
+var fIndex=0,fCap=1,fPages=0,fWheel=0,fItems=[],fS=100,fMouse=null,fRaf=0;
+function focusOn(){return document.documentElement.classList.contains('focus')}
+/* 按分数降序；分数相同保持原有的分类 / 链接顺序 */
+function rankedLinks(){
+  var order=[];
+  cats.forEach(function(c){links.forEach(function(l){if(l.cat===c.id)order.push(l)})});
+  return order.map(function(l,i){return {l:l,i:i}})
+    .sort(function(a,b){return (clicks[b.l.id]||0)-(clicks[a.l.id]||0)||a.i-b.i})
+    .map(function(x){return x.l});
+}
+function buildFocus(first){
+  var list=rankedLinks();
+  if(!list.length){stage.innerHTML='<div class="empty">还没有链接。<a href="/admin">去管理页添加</a></div>';return}
+  var sw=stage.clientWidth,sh=stage.clientHeight;
+  var W=sw-80,H=sh-48,gap=W<520?10:14,base=W<520?96:112;
+  var cols=Math.max(1,Math.floor((W+gap)/(base+gap))),rows=Math.max(1,Math.floor((H+gap)/(base+gap)));
+  var s=Math.max(56,Math.floor(Math.min((W-(cols-1)*gap)/cols,(H-(rows-1)*gap)/rows,150)));
+  var ox=(sw-(cols*s+(cols-1)*gap))/2,oy=(sh-(rows*s+(rows-1)*gap))/2;
+  var cap=cols*rows,n=Math.ceil(list.length/cap);
+  if(first!=null)fIndex=Math.floor(first/cap); /* 窗口大小变化后，尽量停留在原来看的那几个网站 */
+  /* 第一屏：格子按到中心的距离排序（距离相同时从正上方起顺时针），点击最多的放正中心 */
+  var cx=(cols-1)/2,cy=(rows-1)/2,spiral=[];
+  for(var i=0;i<cap;i++){
+    var dx=i%cols-cx,dy=Math.floor(i/cols)-cy;
+    spiral.push({i:i,d:Math.round(Math.sqrt(dx*dx+dy*dy)*1e6),a:(Math.atan2(dx,-dy)+2*Math.PI)%(2*Math.PI)});
+  }
+  spiral.sort(function(a,b){return a.d-b.d||a.a-b.a});
+  var h='',meta=[];
+  for(var p=0;p<n;p++){
+    h+='<div class="fpage" style="top:'+(p*100)+'%">';
+    meta[p]=[];
+    list.slice(p*cap,(p+1)*cap).forEach(function(l,k){
+      var cell=p===0?spiral[k].i:k;
+      meta[p].push({cx:ox+(cell%cols)*(s+gap)+s/2,cy:oy+Math.floor(cell/cols)*(s+gap)+s/2});
+      h+='<a class="fcard" data-id="'+esc(l.id)+'" href="'+esc(l.url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(l.title)+'" style="width:'+s+'px;height:'+s+'px;left:'+(ox+(cell%cols)*(s+gap))+'px;top:'+(oy+Math.floor(cell/cols)*(s+gap))+'px">'+
+        U.icon(l)+'<span class="fn">'+esc(l.title)+'</span></a>';
+    });
+    h+='</div>';
+  }
+  var dots='';
+  if(n>1)for(var d=0;d<n;d++)dots+='<button class="dot" type="button" data-i="'+d+'" aria-label="第 '+(d+1)+' 屏"></button>';
+  stage.style.setProperty('--ico',Math.round(s*.38)+'px');
+  stage.innerHTML='<div class="track">'+h+'</div>'+(n>1?'<div class="dots">'+dots+'</div>':'');
+  fCap=cap;fPages=n;fS=s;
+  fItems=[];
+  var pgEls=stage.querySelectorAll('.fpage');
+  for(var q=0;q<n;q++){
+    var kids=pgEls[q].children;
+    fItems[q]=meta[q].map(function(m,i){m.el=kids[i];return m});
+  }
+  goTo(Math.min(fIndex,n-1),true);
+}
+/* 金属高光：扫光随鼠标水平位置移动，鼠标靠近的卡片出现点光源高光（只改光泽，不缩放、不模糊） */
+function applyLens(){
+  var items=fItems[fIndex];if(!items)return;
+  var R=fS*3,sw=stage.clientWidth;
+  for(var i=0;i<items.length;i++){
+    var m=items[i],el=m.el,li=0;
+    if(fMouse){
+      var dx=m.cx-fMouse.x,dy=m.cy-fMouse.y,tl=Math.max(0,1-Math.sqrt(dx*dx+dy*dy)/R);li=tl*tl;
+      el.style.setProperty('--lx',(fMouse.x-(m.cx-fS/2))+'px');
+      el.style.setProperty('--ly',(fMouse.y-(m.cy-fS/2))+'px');
+      el.style.setProperty('--sx',(100-fMouse.x/Math.max(1,sw)*100).toFixed(1)+'%');
+    }
+    el.style.setProperty('--li',li.toFixed(3));
+  }
+}
+function lensSoon(){if(!fRaf)fRaf=requestAnimationFrame(function(){fRaf=0;applyLens()})}
+stage.addEventListener('pointermove',function(e){
+  if(e.pointerType==='touch')return;
+  var r=stage.getBoundingClientRect();fMouse={x:e.clientX-r.left,y:e.clientY-r.top};lensSoon();
+});
+stage.addEventListener('pointerleave',function(){fMouse=null;lensSoon()});
+function goTo(i,instant){
+  i=Math.max(0,Math.min(fPages-1,i));fIndex=i;
+  var t=stage.querySelector('.track');
+  if(t){
+    if(instant){t.style.transition='none'}
+    t.style.transform='translateY(-'+(i*100)+'%)';
+    if(instant){t.offsetHeight;t.style.transition=''}
+  }
+  stage.querySelectorAll('.dot').forEach(function(b,k){b.classList.toggle('on',k===i)});
+  lensSoon();
+}
+function setFocus(on){
+  document.documentElement.classList.toggle('focus',on);
+  fbtn.classList.toggle('on',on);fbtn.setAttribute('aria-pressed',on?'true':'false');
+  try{localStorage.setItem('nav:focus',on?'1':'0')}catch(e){}
+  if(on){fIndex=0;buildFocus()}else{render()}
+}
+fbtn.addEventListener('click',function(){setFocus(!focusOn())});
+stage.addEventListener('click',function(e){var b=e.target.closest('.dot');if(b)goTo(parseInt(b.getAttribute('data-i'),10))});
+stage.addEventListener('wheel',function(e){
+  e.preventDefault();
+  var now=Date.now();if(now<fWheel||Math.abs(e.deltaY)<8)return;
+  fWheel=now+450;goTo(fIndex+(e.deltaY>0?1:-1));
+},{passive:false});
+var ty=null;
+stage.addEventListener('touchstart',function(e){ty=e.touches[0].clientY},{passive:true});
+stage.addEventListener('touchend',function(e){
+  if(ty===null)return;var dy=e.changedTouches[0].clientY-ty;ty=null;
+  if(Math.abs(dy)>50)goTo(fIndex+(dy<0?1:-1));
+},{passive:true});
+document.addEventListener('keydown',function(e){
+  if(!focusOn())return;
+  var tag=(document.activeElement&&document.activeElement.tagName)||'';
+  if(tag==='INPUT'||tag==='TEXTAREA')return;
+  var k=e.key;
+  if(k==='ArrowDown'||k==='ArrowRight'||k==='PageDown'){e.preventDefault();goTo(fIndex+1)}
+  else if(k==='ArrowUp'||k==='ArrowLeft'||k==='PageUp'){e.preventDefault();goTo(fIndex-1)}
+  else if(k==='Home'){e.preventDefault();goTo(0)}
+  else if(k==='End'){e.preventDefault();goTo(fPages-1)}
+  else if(k==='Escape'){setFocus(false)}
+});
+var rz;
+window.addEventListener('resize',function(){
+  clearTimeout(rz);
+  rz=setTimeout(function(){if(focusOn())buildFocus(fIndex*fCap)},120);
+});
+
 render();
+if(focusOn()){fbtn.classList.add('on');fbtn.setAttribute('aria-pressed','true');buildFocus()}
 })();`;
 
 function homePage(data, title, authed, clicks) {
@@ -1022,6 +1187,7 @@ function homePage(data, title, authed, clicks) {
 <title>${escapeHtml(title)}</title>
 ${FAVICON_LINK}
 ${THEME_INIT}
+<script>try{if(localStorage.getItem('nav:focus')==='1')document.documentElement.classList.add('focus')}catch(e){}</script>
 <style>
 ${BASE_CSS}
 ${HOME_CSS}
@@ -1037,6 +1203,7 @@ ${HOME_CSS}
     </label>
     <span class="tb-sp"></span>
     ${THEME_BTN}
+    <button class="icon-btn" id="focusBtn" type="button" aria-label="聚焦模式" aria-pressed="false" title="聚焦模式"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/></svg></button>
     <a class="icon-btn" href="/admin" title="管理" aria-label="管理"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></a>
     ${authed ? '<a class="icon-btn" href="/logout" title="退出登录" aria-label="退出登录"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg></a>' : ''}
   </div></header>
@@ -1048,6 +1215,7 @@ ${HOME_CSS}
   </div>
   <footer class="footer">© ${year} ${escapeHtml(title)}</footer>
 </div>
+<div class="stage" id="stage" aria-label="聚焦模式"></div>
 <script>window.__DATA__=${safeJson(data)};window.__CLICKS__=${safeJson(clicks || {})};</script>
 <script>${COMMON_JS}</script>
 <script>${HOME_JS}</script>
