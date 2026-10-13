@@ -245,7 +245,7 @@ async function cleanupIcons(env, data) {
 // 抓取网站图标：先 Google 图标服务，再尝试站点自己的 /favicon.ico
 async function fetchFavicon(host) {
     const tries = [
-        `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`,
+        `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`,
         `https://${host}/favicon.ico`
     ];
     for (const u of tries) {
@@ -463,7 +463,7 @@ export default {
                 if (!ok) return new Response('Not Found', { status: 404 });
             }
             const cache = caches.default;
-            const cacheKey = new Request(url.origin + '/favicon/' + host);
+            const cacheKey = new Request(url.origin + '/favicon/' + host + '?s=128'); // 带 ?s=128：让之前缓存的 64px 旧图标失效
             const hit = await cache.match(cacheKey);
             if (hit) return hit;
             const icon = await fetchFavicon(host);
@@ -625,13 +625,28 @@ const THEME_BTN = `<button class="icon-btn" id="themeBtn" type="button" aria-lab
 
 const THEME_JS = `
 (function(){
-  var b=document.getElementById('themeBtn');if(!b)return;
+  var b=document.getElementById('themeBtn');
+  if(!b)return;
+
   b.addEventListener('click',function(){
-    var n=document.documentElement.dataset.theme==='light'?'dark':'light';
-    document.documentElement.dataset.theme=n;
+    var root=document.documentElement;
+    var n=root.dataset.theme==='light'?'dark':'light';
+
+    /* 切换主题时临时关闭所有过渡动画 */
+    root.classList.add('theme-switching');
+    root.dataset.theme=n;
+
     try{localStorage.setItem('theme',n)}catch(e){}
+
+    /* 等主题颜色完成更新后，再恢复正常交互动画 */
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        root.classList.remove('theme-switching');
+      });
+    });
   });
-})();`;
+})();
+`;
 
 const BASE_CSS = `
 :root{
@@ -652,6 +667,14 @@ const BASE_CSS = `
   color-scheme:light;
 }
 *{margin:0;padding:0;box-sizing:border-box}
+/* 明暗主题切换期间：禁止整页动画与颜色过渡 */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after{
+  transition:none!important;
+  animation:none!important;
+  scroll-behavior:auto!important;
+}
 html{-webkit-text-size-adjust:100%}
 body{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(900px 420px at 50% -120px,var(--accent-soft),transparent 70%)}
@@ -678,6 +701,15 @@ button{cursor:pointer}
 /* 图标：上传图 / 网站图标 / 首字母头像 */
 .ico{width:34px;height:34px;flex:none;border-radius:9px;overflow:hidden;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
 .ico img{width:100%;height:100%;object-fit:contain;padding:4px}
+.ico[data-k=full]{background:transparent;border-color:rgba(100,110,135,.16)}
+.ico[data-k=full] img{padding:0;object-fit:cover}
+.ico[data-k=logo]{background:#fff;border-color:rgba(100,110,135,.16)}
+.ico[data-k=logo] img{padding:17%}
+.ico[data-k=logo][data-tone=light]{background:#262a37;border-color:rgba(255,255,255,.08)}
+[data-theme=dark] .ico[data-k=full]{border-color:rgba(255,255,255,.08)}
+[data-theme=dark] .ico[data-k=logo]{background:rgba(255,255,255,.075);border-color:rgba(255,255,255,.08)}
+[data-theme=dark] .ico[data-k=logo][data-tone=dark]{background:#eef0f6;border-color:transparent}
+[data-theme=dark] .ico[data-k=logo][data-tone=light]{background:rgba(255,255,255,.075)}
 .ico-fb{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:hsl(var(--h) 52% 46%);color:#fff;font-weight:650;font-size:15px}
 
 .search{position:relative;flex:1;min-width:0}
@@ -702,19 +734,67 @@ window.NavUI=(function(){
     var ch=Array.from(t)[0]||'?';
     return '<span class="ico-fb" style="--h:'+hue(t)+'">'+esc(ch.toUpperCase())+'</span>';
   }
+  /* 已经处理过的图标结果（按原始地址缓存），搜索 / 重新渲染时直接带上，避免闪烁和重复计算 */
+  var normCache={};
   function icon(l){
-    var inner;
-    if(l.icon){
-      inner='<img class="ico-img" alt="" loading="lazy" data-t="'+esc(l.title)+'" src="/icon/'+esc(l.icon)+'">';
-    }else{
-      var h=hostOf(l.url);
-      inner=h?'<img class="ico-img" alt="" loading="lazy" data-t="'+esc(l.title)+'" src="/favicon/'+encodeURIComponent(h)+'">':fallback(l.title);
-    }
-    return '<span class="ico">'+inner+'</span>';
+    var inner,src,t=esc(l.title);
+    if(l.icon){src='/icon/'+esc(l.icon)}
+    else{var h=hostOf(l.url);src=h?'/favicon/'+encodeURIComponent(h)+'?s=128':''}
+    if(!src)return '<span class="ico">'+fallback(l.title)+'</span>';
+    var c=normCache[src];
+    inner='<img class="ico-img" alt="" loading="lazy" data-t="'+t+'"'+(c?' data-n="1"':'')+' src="'+(c&&c.u?c.u:src)+'">';
+    return '<span class="ico"'+(c?' data-k="'+c.k+'" data-tone="'+c.t+'"':'')+'>'+inner+'</span>';
   }
   document.addEventListener('error',function(e){
     var t=e.target;
     if(t&&t.classList&&t.classList.contains('ico-img')&&t.parentNode){t.parentNode.innerHTML=fallback(t.getAttribute('data-t'))}
+  },true);
+  /* 统一图标形状（首页普通模式、聚焦模式、管理页都生效）：
+     1) 边缘整圈不透明的「满铺方图」→ 直接裁成统一圆角，不再套底板；
+     2) 透明底 / 圆形 / 异形的 logo → 裁掉多余空白、居中缩放到同样的视觉大小，放进同一块底板；
+     3) 按 logo 明暗挑底板：白色 logo 在亮色主题用深色底板，黑色 logo 在暗色主题用浅色底板，保证看得清。 */
+  function normalizeIcon(img){
+    if(img.getAttribute('data-n'))return;
+    img.setAttribute('data-n','1');
+    var ico=img.parentNode,kind='logo',tone='mid',src0=img.getAttribute('src'),newUrl='';
+    try{
+      var w=img.naturalWidth,h=img.naturalHeight;
+      if(!w||!h)throw 0;
+      var N=64,c=document.createElement('canvas');c.width=c.height=N;
+      var x=c.getContext('2d',{willReadFrequently:true});
+      x.drawImage(img,0,0,N,N);
+      var d=x.getImageData(0,0,N,N).data,k,i,j;
+      var edge=0,opq=0;
+      for(k=12;k<N-12;k++){
+        [d[(k)*4+3],d[((N-1)*N+k)*4+3],d[(k*N)*4+3],d[(k*N+N-1)*4+3]].forEach(function(a){edge++;if(a>200)opq++});
+      }
+      var minX=N,minY=N,maxX=-1,maxY=-1,ls=0,ln=0;
+      for(j=0;j<N;j++)for(i=0;i<N;i++){
+        var o=(j*N+i)*4,a=d[o+3];
+        if(a>24){
+          if(i<minX)minX=i;if(i>maxX)maxX=i;if(j<minY)minY=j;if(j>maxY)maxY=j;
+          if(a>100){ls+=(.2126*d[o]+.7152*d[o+1]+.0722*d[o+2])/255;ln++}
+        }
+      }
+      var lum=ln?ls/ln:.5;
+      tone=lum<.3?'dark':lum>.82?'light':'mid';
+      if(opq/edge>.9){kind='full'}
+      else if(maxX>=0){
+        var sx=minX/N*w,sy=minY/N*h,sw=(maxX-minX+1)/N*w,sh=(maxY-minY+1)/N*h;
+        var out=document.createElement('canvas');out.width=out.height=128;
+        var ox=out.getContext('2d'),sc=Math.min(128/sw,128/sh),dw=sw*sc,dh=sh*sc;
+        ox.imageSmoothingQuality='high';
+        ox.drawImage(img,sx,sy,sw,sh,(128-dw)/2,(128-dh)/2,dw,dh);
+        newUrl=out.toDataURL('image/png');
+        img.src=newUrl;
+      }
+    }catch(e){}
+    normCache[src0]={k:kind,t:tone,u:newUrl};
+    if(ico){ico.setAttribute('data-k',kind);ico.setAttribute('data-tone',tone)}
+  }
+  document.addEventListener('load',function(e){
+    var t=e.target;
+    if(t&&t.classList&&t.classList.contains('ico-img'))normalizeIcon(t);
   },true);
   return {esc:esc,hostOf:hostOf,norm:norm,icon:icon,fallback:fallback};
 })();`;
@@ -822,47 +902,239 @@ const HOME_CSS = `
 .d{font-size:12px;line-height:1.4;margin-top:4px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{text-align:center;color:var(--faint);padding:80px 0}
 .empty a{color:var(--accent)}
-/* 聚焦模式：整屏只有方形卡片，按点击次数从中心向外铺开，多屏用右侧圆点切换 */
+
+/* 聚焦模式：现代极简、低对比表面与克制交互 */
 .stage{display:none}
 #focusBtn.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 html.focus,html.focus body{overflow:hidden}
 html.focus .page,html.focus .search{display:none}
-html.focus .stage{display:block;position:fixed;left:0;right:0;top:var(--tb);bottom:0;z-index:5;overflow:hidden}
-.track{position:absolute;left:0;right:0;top:0;height:100%;transition:transform .4s cubic-bezier(.3,.7,.2,1)}
-.fpage{position:absolute;left:0;right:0;height:100%}
+
+html.focus .stage{
+  display:block;
+  position:fixed;
+  left:0;
+  right:0;
+  top:var(--tb);
+  bottom:0;
+  z-index:5;
+  overflow:hidden;
+  background:var(--bg);
+  isolation:isolate;
+}
+
+/* 极轻微的环境色，不抢网站图标的视觉焦点 */
+html.focus .stage::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  z-index:-1;
+  pointer-events:none;
+  background:radial-gradient(
+    ellipse at 50% 0%,
+    rgba(124,131,255,.055),
+    transparent 62%
+  );
+}
+
+html[data-theme=light].focus .stage::before{
+  background:radial-gradient(
+    ellipse at 50% 0%,
+    rgba(79,70,229,.035),
+    transparent 62%
+  );
+}
+
+.track{
+  position:absolute;
+  left:0;
+  right:0;
+  top:0;
+  height:100%;
+  transition:transform .4s cubic-bezier(.3,.7,.2,1);
+}
+
+.fpage{
+  position:absolute;
+  left:0;
+  right:0;
+  height:100%;
+}
+
+/* 卡片主体：低饱和表面、细边框、弱阴影 */
 .fcard{
-  --lx:50%;--ly:30%;--li:0;--sx:30%;
-  --spec:rgba(255,255,255,.95);--sweep:rgba(255,255,255,.65);
-  position:absolute;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px 6px 10px;border-radius:12px;text-align:center;
-  /* 钢琴键白：微暖的象牙白，上半部一层带硬边的亮面，底部一道键面的暗边 */
-  background:
-    linear-gradient(180deg,rgba(255,255,255,.95) 0%,rgba(255,255,255,.4) 42%,rgba(255,255,255,0) 43%),
-    linear-gradient(180deg,#fefdf9 0%,#f7f4ec 68%,#ede8db 100%);
-  box-shadow:inset 0 1px 0 #fff,inset 0 -3px 0 rgba(120,105,70,.13),inset 0 0 0 1px rgba(60,50,30,.11),0 1px 2px rgba(60,50,30,.12),0 12px 22px -14px rgba(60,50,30,.45);
+  position:absolute;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  padding:8px 7px 10px;
+  border-radius:16px;
+  text-align:center;
+  color:var(--text);
+
+  background:rgba(255,255,255,.78);
+  border:1px solid rgba(100,110,135,.15);
+
+  -webkit-backdrop-filter:blur(14px) saturate(135%);
+  backdrop-filter:blur(14px) saturate(135%);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.9),
+    0 2px 4px rgba(20,25,40,.025),
+    0 8px 24px -18px rgba(20,25,40,.24);
+
+  transition:
+    transform .2s cubic-bezier(.2,.7,.2,1),
+    background .2s ease,
+    border-color .2s ease,
+    box-shadow .2s ease;
+
+  -webkit-tap-highlight-color:transparent;
 }
-/* 钢琴烤漆黑：近乎纯黑的深色底，上半部一块带硬边的镜面反光，边缘一圈细高光 */
+
+/* 深色主题：石墨灰表面，避免纯黑和厚重反光 */
 [data-theme=dark] .fcard{
-  --spec:rgba(255,255,255,.32);--sweep:rgba(255,255,255,.11);
-  background:
-    linear-gradient(180deg,rgba(255,255,255,.17) 0%,rgba(255,255,255,.055) 48%,rgba(255,255,255,0) 48.6%),
-    radial-gradient(120% 90% at 18% 0%,rgba(255,255,255,.07),transparent 60%),
-    linear-gradient(165deg,#16171b 0%,#050506 50%,#000 100%);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),inset 0 -1px 0 rgba(255,255,255,.07),inset 0 0 0 1px rgba(255,255,255,.07),0 1px 2px rgba(0,0,0,.6),0 14px 26px -14px rgba(0,0,0,.95);
+  background:rgba(30,33,43,.82);
+  border-color:rgba(255,255,255,.085);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    0 2px 5px rgba(0,0,0,.10),
+    0 10px 26px -20px rgba(0,0,0,.45);
 }
-/* 扫光：随鼠标水平位置在卡片上滑过，像漆面 / 琴键上的反光 */
-.fcard::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
-  background:linear-gradient(112deg,transparent 36%,var(--sweep) 47%,transparent 58%);background-size:300% 100%;background-position:var(--sx) 0;opacity:.8;transition:background-position .25s ease-out}
-/* 点光源高光：跟随鼠标，靠近时才亮 */
-.fcard::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
-  background:radial-gradient(circle at var(--lx) var(--ly),var(--spec),transparent 62%);opacity:var(--li)}
-.fcard>*{position:relative;z-index:1}
-.fcard .ico{width:var(--ico);height:var(--ico);border-radius:calc(var(--ico)*.22)}
-.fcard .ico-fb{font-size:calc(var(--ico)*.45)}
-.fn{flex:none;max-width:100%;font-size:13px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
-.dots{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;z-index:6}
-.dot{width:24px;height:16px;display:flex;align-items:center;justify-content:center;background:none;border:0;padding:0;cursor:pointer}
-.dot::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--text);transition:background .2s}
-.dot.on::before{background:#9b9b9b}
+
+/* 悬停：轻微浮起，边缘略微提亮 */
+.fcard:hover{
+  z-index:2;
+  transform:translateY(-2px) scale(1.015);
+  background:rgba(255,255,255,.96);
+  border-color:rgba(100,110,145,.25);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.95),
+    0 5px 14px rgba(25,35,60,.055),
+    0 14px 28px -20px rgba(25,35,60,.20);
+}
+
+[data-theme=dark] .fcard:hover{
+  background:rgba(42,46,59,.96);
+  border-color:rgba(180,190,255,.24);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.075),
+    0 5px 16px rgba(0,0,0,.16),
+    0 0 0 1px rgba(160,170,255,.035);
+}
+
+/* 彻底取消旧版金属扫光和鼠标点光源 */
+.fcard::before,
+.fcard::after{
+  display:none;
+}
+
+/* 网站图标：保留图标本身，不加多余装饰 */
+.fcard .ico{
+  width:var(--ico);
+  height:var(--ico);
+  flex:none;
+  border-radius:calc(var(--ico)*.23);
+  background:var(--surface2);
+  border:1px solid rgba(100,110,135,.10);
+}
+
+[data-theme=dark] .fcard .ico{
+  border-color:rgba(255,255,255,.07);
+}
+
+.fcard .ico img{
+  padding:3px;
+}
+
+/* 统一图标形状：满铺方图直接铺满并裁成统一圆角；其余 logo 放进同一块底板，内边距一致 */
+.fcard .ico[data-k=full]{background:transparent;border-color:rgba(100,110,135,.16)}
+[data-theme=dark] .fcard .ico[data-k=full]{border-color:rgba(255,255,255,.08)}
+.fcard .ico[data-k=full] img{padding:0;object-fit:cover}
+.fcard .ico[data-k=logo]{background:#fff;border-color:rgba(100,110,135,.16)}
+.fcard .ico[data-k=logo] img{padding:17%}
+.fcard .ico[data-k=logo][data-tone=light]{background:#262a37;border-color:rgba(255,255,255,.08)}
+[data-theme=dark] .fcard .ico[data-k=logo]{background:rgba(255,255,255,.075);border-color:rgba(255,255,255,.08)}
+[data-theme=dark] .fcard .ico[data-k=logo][data-tone=dark]{background:#eef0f6;border-color:transparent}
+[data-theme=dark] .fcard .ico[data-k=logo][data-tone=light]{background:rgba(255,255,255,.075)}
+
+.fcard .ico-fb{
+  font-size:calc(var(--ico)*.45);
+}
+
+/* 网站名称：清晰、紧凑，避免过重 */
+.fn{
+  flex:none;
+  max-width:100%;
+  font-size:13px;
+  font-weight:560;
+  /* 固定行高：字号被缩小时，名称区高度不变，所有卡片的图标位置保持一致 */
+  height:18px;
+  line-height:18px;
+  letter-spacing:.005em;
+  /* 名称始终单行：名字太长时由脚本缩小字号（最小 9px）来放进卡片，实在放不下才用省略号 */
+  display:block;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* 页面切换指示点 */
+.dots{
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  display:flex;
+  flex-direction:column;
+  z-index:6;
+}
+
+.dot{
+  width:24px;
+  height:16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:none;
+  border:0;
+  padding:0;
+  cursor:pointer;
+}
+
+.dot::before{
+  content:'';
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:var(--muted);
+  opacity:.42;
+  transition:transform .2s,opacity .2s,background .2s;
+}
+
+.dot.on::before{
+  background:var(--accent);
+  opacity:1;
+  transform:scale(1.35);
+}
+
+/* 触屏设备不使用悬停浮起效果 */
+@media(hover:none){
+  .fcard:hover{transform:none}
+}
+
+/* 尊重系统减少动态效果设置 */
+@media(prefers-reduced-motion:reduce){
+  .track,.fcard,.dot::before{
+    transition:none!important;
+  }
+}
+
 @media(max-width:860px){
   .page{padding:0 14px}
   .brand .bt{display:none}
@@ -1097,6 +1369,8 @@ function buildFocus(first){
   stage.style.setProperty('--ico',Math.round(s*.38)+'px');
   stage.innerHTML='<div class="track">'+h+'</div>'+(n>1?'<div class="dots">'+dots+'</div>':'');
   fCap=cap;fPages=n;fS=s;
+  fitNames();
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fitNames);
   fItems=[];
   var pgEls=stage.querySelectorAll('.fpage');
   for(var q=0;q<n;q++){
@@ -1126,6 +1400,18 @@ stage.addEventListener('pointermove',function(e){
   var r=stage.getBoundingClientRect();fMouse={x:e.clientX-r.left,y:e.clientY-r.top};lensSoon();
 });
 stage.addEventListener('pointerleave',function(){fMouse=null;lensSoon()});
+/* 名称太长就缩小字号，让它在一行内放得下（最小 9px，再长就显示省略号） */
+function fitNames(){
+  var els=stage.querySelectorAll('.fn');
+  for(var i=0;i<els.length;i++){
+    var el=els[i];el.style.fontSize='';
+    var cw=el.clientWidth,sw=el.scrollWidth;
+    if(cw>0&&sw>cw){
+      var base=parseFloat(getComputedStyle(el).fontSize)||13;
+      el.style.fontSize=Math.max(9,Math.floor(base*cw/sw*2)/2)+'px';
+    }
+  }
+}
 function goTo(i,instant){
   i=Math.max(0,Math.min(fPages-1,i));fIndex=i;
   var t=stage.querySelector('.track');
