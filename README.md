@@ -73,7 +73,6 @@ npm run dev
 - 登录后下发 7 天有效的 HMAC 签名 Cookie（HttpOnly / Secure / SameSite=Strict）。
 - 登录接口没有内置限速，建议在 Cloudflare 里为 `/login` 加一条速率限制规则。
 - 「常用网站」的点击数由浏览器每小时汇总上报一次，不会占用多少 KV 写入额度；开启 `REQUIRE_LOGIN` 后，只有登录用户的点击会被统计。
-- 没有做链接可用性检测：Worker 单次请求的子请求数量有限，链接多时无法在一次页面加载里全部探测。
 
 ## 许可证
 
